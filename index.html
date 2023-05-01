@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests"> -->
+
+    <title>Document</title>
+    <style>
+        h2,
+        input,
+        button {
+            text-align: center;
+        }
+
+        input {
+            width: 300px;
+            height: 20px;
+            font-size: 20px;
+        }
+
+        button {
+            font-size: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- <script src="https://unpkg.com/axios@latest/dist/axios.min.js"></script> -->
+
+    <h2 id="location"></h2>
+    <h2 id="speed"></h2>
+    <h2 id="angel"></h2>
+    <h2 id="date"></h2>
+
+    <div style="margin: 100px auto !important;">
+        <input type="text" id="device_id" maxlength="15">
+        <button id="sendData">Ma'lumotlarni yuborish</button>
+        <div id="msg"></div>
+    </div>
+
+
+    <script>
+        const btn = document.querySelector('#sendData');
+        let speed = 0;
+        let prevPosition = null;
+        let watchId = null;
+        let angle = 0;
+
+        function startWatchingPosition() {
+            watchId = navigator.geolocation.watchPosition(
+                function (position) {
+                    if (prevPosition) {
+                        const timeDiff = (position.timestamp - prevPosition.timestamp) / 1000; // in seconds
+                        const distance = calculateDistance(prevPosition.coords, position.coords); // in meters
+                        speed = distance / timeDiff; // in meters per second
+                        console.log(`Current speed: ${speed.toFixed(2)} m/s`);
+                    }
+                    prevPosition = position;
+                },
+                function (error) {
+                    console.error(`Error getting position: ${error}`);
+                }
+            );
+        }
+
+        function stopWatchingPosition() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+        }
+
+        function calculateDistance(fromCoords, toCoords) {
+            const R = 6371e3; // radius of Earth in meters
+            const lat1 = fromCoords.latitude;
+            const lon1 = fromCoords.longitude;
+            const lat2 = toCoords.latitude;
+            const lon2 = toCoords.longitude;
+            const phi1 = lat1 * (Math.PI / 180);
+            const phi2 = lat2 * (Math.PI / 180);
+            const deltaPhi = (lat2 - lat1) * (Math.PI / 180);
+            const deltaLambda = (lon2 - lon1) * (Math.PI / 180);
+            const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const d = R * c;
+            return d;
+        }
+
+        function startWatchingOrientation() {
+            if (window.DeviceOrientationEvent) {
+                window.addEventListener('deviceorientation', function (event) {
+                    const beta = event.beta;
+                    const gamma = event.gamma;
+                    angle = Math.atan2(-beta, gamma) * (180 / Math.PI) +
+                        90; //Math.atan2(beta, gamma) * (180 / Math.PI);
+                    console.log(`Current angle: ${angle.toFixed(2)} degrees`);
+                });
+            } else {
+                console.error('Device orientation not supported');
+            }
+        }
+
+        function stopWatchingOrientation() {
+            window.removeEventListener('deviceorientation');
+        }
+
+        function startLoggingData() {
+            const device_id = document.querySelector('#device_id').value;
+            if (device_id.length == 15) {
+                localStorage.setItem('device_id', device_id);
+                setInterval(function () {
+                    const currentDate = new Date();
+                    const formattedDate = currentDate.toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    }).replace(',', '');
+                    const speedKph = (speed * 3.6).toFixed(2);
+
+                    document.querySelector('#location').innerHTML = '';
+                    document.querySelector('#speed').innerHTML = '';
+                    document.querySelector('#angel').innerHTML = '';
+                    document.querySelector('#date').innerHTML = '';
+                    document.querySelector('#location').append(
+                        `Current position: ${prevPosition.coords.latitude}, ${prevPosition.coords.longitude}`
+                    )
+                    document.querySelector('#speed').append(`Current speed: ${speedKph} km/s`)
+                    document.querySelector('#angel').append(`Current angle: ${angle.toFixed(2)} degrees`)
+                    document.querySelector('#date').append(`Current date: ${formattedDate}`)
+                    // axios.post('http://84.54.96.157:56659/log', {
+                    //         device_id: parseInt(device_id),
+                    //         latitude: prevPosition.coords.latitude,
+                    //         longitude: prevPosition.coords.longitude,
+                    //         angle: angle.toFixed(2),
+                    //         speed: Math.floor(speedKph),
+                    //         date_time: formattedDate
+                    //     })
+                    //     .then(function (response) {
+                    //         console.log(response.data);
+                    //     })
+                    //     .catch(function (error) {
+                    //         console.log(error);
+                    //     });
+                    fetch('http://84.54.96.157:56659/log', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                device_id: parseInt(device_id),
+                                latitude: prevPosition.coords.latitude,
+                                longitude: prevPosition.coords.longitude,
+                                angle: angle.toFixed(2),
+                                speed: Math.floor(speedKph),
+                                date_time: formattedDate
+                            }),
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                        .then(response => response.json())
+                        .then(data => console.log(data))
+                        .catch(error => console.error('Error:', error));
+
+
+                    btn.style.display = "none";
+                    document.querySelector('#msg').innerHTML = '';
+                    document.querySelector('#msg').append(`Ma'lumotlar yuborilishni boshladi`)
+                }, 1000);
+            } else {
+                document.querySelector('#msg').innerHTML = '';
+                document.querySelector('#msg').append(
+                    `IMEI uzunligi 15ta raqamdan iborat bo'lishi kerak!`)
+            }
+
+        }
+
+
+        function stopLoggingData() {
+            clearInterval();
+        }
+
+        startWatchingPosition();
+        startWatchingOrientation();
+
+        btn.addEventListener('click', () => startLoggingData());
+    </script>
+</body>
+
+</html>
